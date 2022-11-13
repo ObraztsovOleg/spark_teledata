@@ -1,0 +1,33 @@
+version: "3.7"
+services:
+  #spark:
+  #  image: bde2020/spark-submit:3.3.0-hadoop3.3
+  #  restart: always
+  #  command: bash -c "/spark/bin/spark-shell < /test/test.scala"
+  #  deploy:
+  #    replicas: 1
+  #  volumes:
+  #   - ./test:/test
+  #  networks:
+  #   - default
+  hw4:
+    image: bde2020/spark-submit:3.3.0-hadoop3.3
+    restart: always
+    command: 
+      - bash
+      - -c 
+      - |
+        /spark/bin/spark-shell < /head/main.scala --conf spark.driver.args="h31"
+        /spark/bin/spark-shell < /head/main.scala --conf spark.driver.args="h55"
+        /spark/bin/spark-shell < /head/main.scala --conf spark.driver.args="h80"
+        /spark/bin/spark-shell < /head/main.scala --conf spark.driver.args="h86"
+    deploy:
+      replicas: 1
+    volumes:
+     - ./head:/head
+    networks:
+     - default
+
+networks:
+  default:
+    name: docker-hadoop_default
