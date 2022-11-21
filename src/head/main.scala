@@ -1,3 +1,4 @@
+import org.apache.spark.mllib.stat.Statistics
 var result = spark.sparkContext.emptyRDD[(String, Double)]
 val args = spark.sqlContext.getConf("spark.driver.args").split(",")
 
@@ -20,7 +21,7 @@ val user_log_speed =
 	})
 val user_log_reduced = user_log_speed.reduceByKey(_+_)
 
-val station_logs = sc.textFile("/data/h31/station_logs/*")
+val station_logs = sc.textFile("/data/" + args(0) + "/station_logs/*")
 val station_logs_splited = station_logs.flatMap(line => List(line.split(",\t")))
 val station_logs_filtered =
 	station_logs_splited.filter(row => {
@@ -38,49 +39,44 @@ val station_log_error =
 		(time,row(2).toInt)
 	})
 var station_log_reduced = station_log_error.reduceByKey(_ + _)
-station_log_reduced = station_log_reduced.sortByKey()
 	
-var prev_error = 0
-var inst_station_log = station_log_reduced.filter(row => {
-	val derivative = row._2 - prev_error
-	prev_error = row._2
+var prev_error: Float = 0
+var df = station_log_reduced.toDF()
+df = df.sort("_1")
+df.show()
 
-	if (derivative != 0) {
-		true
+var mapped_df = df.map(row => {
+	val num_val = row.get(1).toString().toFloat
+	val false_val: Float = 0
+	
+	val derivative = num_val - prev_error
+	prev_error = num_val
+	
+
+	if (derivative > 0) {
+		(row.get(0).toString().toInt, row.get(1).toString().toFloat)
 	} else {
-		false
+		(row.get(0).toString().toInt, false_val)
 	}
 })
 
-var inst_user_log = user_log_reduced.cartesian(inst_station_log).map(u => {
-	if (u._1._1 == u._2._1) {
-		(u._1._1, u._1._2)
-	} else {
-		(0, 0)
-	}
-})
 
 
-inst_user_log = inst_user_log.filter(row => {
-	if (row._1 != 0 && row._2 != 0) {
-		true
-	} else {
-		false	
-	}
-})
+var filtered_df = mapped_df.filter("_2 != 0")
+val inst_station_log = filtered_df.rdd
 
-val cov_mul = user_log_reduced.cartesian(station_log_reduced).map(u => {
-	if (u._1._1 == u._2._1) {
-		u._1._2 * u._2._2
-	} else {
-		1
-	}
-})
+val rddX = user_log_reduced.join(station_log_reduced).map(row => (row._2._1).toString.toDouble)
+val rddY = user_log_reduced.join(station_log_reduced).map(row => (row._2._2).toString.toDouble)
+val correlation: Double = Statistics.corr(rddX, rddY, "pearson")
+
+var inst_user_log = user_log_reduced.join(inst_station_log)
 
 val avg_speed = user_log_reduced.join(station_log_reduced).map(row => (row._2._1).toString.toFloat).mean()
-val avg_rspeed = inst_user_log.join(inst_station_log).map(row => (row._2._1).toString.toFloat).mean()
+val avg_rspeed = inst_user_log.join(inst_station_log).sortByKey().map(row => (row._2._1._1).toString.toFloat).mean()
 val avg_error = user_log_reduced.join(station_log_reduced).map(row => (row._2._2).toString.toFloat).mean()
-val avg_rerror = inst_user_log.join(inst_station_log).map(row => (row._2._2).toString.toFloat).mean()
+val avg_rerror = inst_user_log.join(inst_station_log).sortByKey().map(row => (row._2._2).toString.toFloat).mean()
+
+inst_user_log.join(inst_station_log).foreach(println)
 
 val nominator = user_log_reduced.join(station_log_reduced).map(row => {
 	val num_1 = (row._2._1).toString.toFloat
@@ -101,18 +97,16 @@ val y_denominator = user_log_reduced.join(station_log_reduced).map(row => {
 val cov: Double = nominator / scala.math.sqrt(x_denominator * y_denominator)
 
 
-val weighted_speed = inst_user_log.join(inst_station_log).map(row => {
-	val num_1 = (row._2._1).toString.toFloat
-	val num_2 = (row._2._2).toString.toFloat
-	num_1 * num_2
-})
+val weighted_speed = inst_user_log.join(inst_station_log).map(row => row._2._1._1 * row._2._1._2)
+val weighted_error = inst_user_log.join(inst_station_log).map(row => row._2._1._2)
+val weighted_avg = weighted_speed.sum() / weighted_error.sum()
 
-val weighted_avg = weighted_speed.sum() / weighted_speed.count()
-
-val rspeed_sum_sq = inst_user_log.join(inst_station_log).map(row => {
-	val num_1 = (row._2._1).toString.toFloat
+val rspeed_sum_sq = inst_user_log.join(inst_station_log).map(row => {	
+	val num_1 = (row._2._1._1).toString.toFloat
 	(num_1 - avg_rspeed)*(num_1 - avg_rspeed)
 })
+
+avg_rspeed
 
 val CC = 0.95
 val min_interval: Double = avg_rspeed - CC * scala.math.sqrt(rspeed_sum_sq.sum() / rspeed_sum_sq.count())
