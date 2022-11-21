@@ -109,8 +109,8 @@ val rspeed_sum_sq = inst_user_log.join(inst_station_log).map(row => {
 avg_rspeed
 
 val CC = 0.95
-val min_interval: Double = avg_rspeed - CC * scala.math.sqrt(rspeed_sum_sq.sum() / rspeed_sum_sq.count())
-val max_interval: Double = avg_rspeed + CC * scala.math.sqrt(rspeed_sum_sq.sum() / rspeed_sum_sq.count())
+val min_interval: Double = avg_rspeed - CC * scala.math.sqrt(rspeed_sum_sq.sum() / rspeed_sum_sq.count()) / scala.math.sqrt(rspeed_sum_sq.count())
+val max_interval: Double = avg_rspeed + CC * scala.math.sqrt(rspeed_sum_sq.sum() / rspeed_sum_sq.count()) / scala.math.sqrt(rspeed_sum_sq.count())
 
 result = result.union(sc.parallelize(Seq(("Cov", cov))))
 result = result.union(sc.parallelize(Seq(("Weighted avg", weighted_avg))))
